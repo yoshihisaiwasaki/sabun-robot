@@ -265,6 +265,7 @@ def compare(prev_df, cur_df, key):
 
 def verify_payment():
     session_id = st.query_params.get("session_id")
+    st.info(f"DEBUG session_id received: {session_id}")
 
     if not session_id:
         return False
