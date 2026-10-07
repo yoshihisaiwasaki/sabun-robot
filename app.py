@@ -78,8 +78,9 @@ def num(v):
             .replace("$", "")
             .strip()
         )
-    except Exception:
-        return None
+    except Exception as e:
+        st.error(f"Payment verification error: {e}")
+        return False
 
 
 def fmt(v):
