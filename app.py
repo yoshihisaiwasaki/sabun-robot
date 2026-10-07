@@ -12,7 +12,7 @@ from openpyxl import load_workbook
 
 
 APP_NAME = "Sabun Robot"
-VERSION = "0.2-payment"
+VERSION = "0.3-payment-fix"
 
 PAYMENT_URL = os.getenv(
     "SABUN_PAYMENT_URL",
@@ -78,9 +78,8 @@ def num(v):
             .replace("$", "")
             .strip()
         )
-    except Exception as e:
-        st.error(f"Payment verification error: {e}")
-        return False
+    except Exception:
+        return None
 
 
 def fmt(v):
@@ -265,42 +264,27 @@ def compare(prev_df, cur_df, key):
 
 def verify_payment():
     session_id = st.query_params.get("session_id")
-    st.info(f"DEBUG session_id received: {session_id}")
 
     if not session_id:
         return False
 
     try:
-        secret_key = st.secrets["STRIPE_SECRET_KEY"]
-        stripe.api_key = secret_key
+        stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
+        session = stripe.checkout.Session.retrieve(session_id)
 
-        session = stripe.checkout.Session.retrieve(
-            session_id
-        )
+        payment_status = session.get("payment_status")
+        amount_total = session.get("amount_total")
+        currency = session.get("currency")
 
-        payment_status = session.get(
-            "payment_status"
-        )
-
-        amount_total = session.get(
-            "amount_total"
-        )
-
-        currency = session.get(
-            "currency"
-        )
-
-        if (
+        return (
             payment_status == "paid"
             and amount_total == 900
-            and currency == "usd"
-        ):
-            return True
+            and str(currency).lower() == "usd"
+        )
 
-    except Exception:
+    except Exception as e:
+        st.error(f"Payment verification error: {e}")
         return False
-
-    return False
 
 
 paid = verify_payment()
