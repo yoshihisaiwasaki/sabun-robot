@@ -12,12 +12,14 @@ from openpyxl import load_workbook
 
 
 APP_NAME = "Sabun Robot"
-VERSION = "0.3-payment-fix"
+VERSION = "0.4-stripe-v16"
 
 PAYMENT_URL = os.getenv(
     "SABUN_PAYMENT_URL",
     "https://buy.stripe.com/00wdRb7ch1jZ51K6dx9fW01",
 ).strip()
+
+EXPECTED_PAYMENT_LINK_ID = "plink_1UNWQpRNKcXA01aXhLdlaJRM"
 
 
 st.set_page_config(
@@ -272,14 +274,19 @@ def verify_payment():
         stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
         session = stripe.checkout.Session.retrieve(session_id)
 
-        payment_status = session.get("payment_status")
-        amount_total = session.get("amount_total")
-        currency = session.get("currency")
+        payment_status = getattr(session, "payment_status", None)
+        amount_total = getattr(session, "amount_total", None)
+        currency = getattr(session, "currency", None)
+        payment_link = getattr(session, "payment_link", None)
+
+        if hasattr(payment_link, "id"):
+            payment_link = payment_link.id
 
         return (
             payment_status == "paid"
             and amount_total == 900
             and str(currency).lower() == "usd"
+            and payment_link == EXPECTED_PAYMENT_LINK_ID
         )
 
     except Exception as e:
