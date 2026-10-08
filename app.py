@@ -12,14 +12,14 @@ from openpyxl import load_workbook
 
 
 APP_NAME = "Sabun Robot"
-VERSION = "0.4-stripe-v16"
+VERSION = "0.5-payment-link-fix"
 
 PAYMENT_URL = os.getenv(
     "SABUN_PAYMENT_URL",
     "https://buy.stripe.com/00wdRb7ch1jZ51K6dx9fW01",
 ).strip()
 
-EXPECTED_PAYMENT_LINK_ID = "plink_1UNWQpRNKcXA01aXhLdlaJRM"
+EXPECTED_PAYMENT_LINK_ID = "plink_1UNWQpRNKcXA01aXhLdIaJRM"
 
 
 st.set_page_config(
