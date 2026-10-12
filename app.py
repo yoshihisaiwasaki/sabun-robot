@@ -12,14 +12,25 @@ from openpyxl import load_workbook
 
 
 APP_NAME = "Sabun Robot"
-VERSION = "0.5-payment-link-fix"
+VERSION = "0.6-commercial"
 
-PAYMENT_URL = os.getenv(
-    "SABUN_PAYMENT_URL",
-    "https://buy.stripe.com/00wdRb7ch1jZ51K6dx9fW01",
-).strip()
+SINGLE_PRICE_JPY = 500
+STARTER_PRICE_JPY = 1500
+STARTER_MONTHLY_USES = 10
+PRO_PRICE_JPY = 3000
+PRO_MONTHLY_USES = 50
 
-EXPECTED_PAYMENT_LINK_ID = "plink_1UNWQpRNKcXA01aXhLdIaJRM"
+def secret_or_env(name, default=""):
+    try:
+        value = st.secrets.get(name, "")
+    except Exception:
+        value = ""
+    return str(value or os.getenv(name, default) or "").strip()
+
+SINGLE_PAYMENT_URL = secret_or_env("SABUN_SINGLE_PAYMENT_URL")
+SINGLE_PAYMENT_LINK_ID = secret_or_env("SABUN_SINGLE_PAYMENT_LINK_ID")
+
+LEGACY_PAYMENT_LINK_ID = "plink_1UNWQpRNKcXA01aXhLdIaJRM"
 
 
 st.set_page_config(
@@ -276,18 +287,30 @@ def verify_payment():
 
         payment_status = getattr(session, "payment_status", None)
         amount_total = getattr(session, "amount_total", None)
-        currency = getattr(session, "currency", None)
+        currency = str(getattr(session, "currency", "") or "").lower()
         payment_link = getattr(session, "payment_link", None)
 
         if hasattr(payment_link, "id"):
             payment_link = payment_link.id
 
-        return (
+        if (
+            payment_status == "paid"
+            and amount_total == SINGLE_PRICE_JPY
+            and currency == "jpy"
+            and SINGLE_PAYMENT_LINK_ID
+            and payment_link == SINGLE_PAYMENT_LINK_ID
+        ):
+            return True
+
+        if (
             payment_status == "paid"
             and amount_total == 900
-            and str(currency).lower() == "usd"
-            and payment_link == EXPECTED_PAYMENT_LINK_ID
-        )
+            and currency == "usd"
+            and payment_link == LEGACY_PAYMENT_LINK_ID
+        ):
+            return True
+
+        return False
 
     except Exception as e:
         st.error(f"Payment verification error: {e}")
@@ -324,6 +347,10 @@ st.write(
 
 st.write(
     "**ADDED · REMOVED · CHANGED**"
+)
+
+st.caption(
+    "Commercial launch pricing: Full Report ¥500 per use (tax included)."
 )
 
 
@@ -507,24 +534,49 @@ if previous and latest:
                     st.markdown(
                         f"### Unlock all "
                         f"{len(changes)} changes "
-                        f"— **US$9**"
+                        f"— **¥{SINGLE_PRICE_JPY:,} (tax included)**"
                     )
 
                     st.caption(
-                        "See every changed item and "
-                        "download the full change report."
+                        "One payment unlocks the Full Report for this purchase."
                     )
 
-                    if PAYMENT_URL:
+                    if SINGLE_PAYMENT_URL:
                         st.link_button(
-                            "UNLOCK FULL REPORT — $9",
-                            PAYMENT_URL,
+                            f"UNLOCK FULL REPORT — ¥{SINGLE_PRICE_JPY:,}",
+                            SINGLE_PAYMENT_URL,
                             use_container_width=True,
                         )
                     else:
-                        st.info(
-                            "Payment link is not configured."
+                        st.warning(
+                            "The ¥500 payment link is being configured."
                         )
+
+                    st.markdown("#### Plans")
+                    p1, p2, p3 = st.columns(3)
+
+                    with p1:
+                        st.markdown(
+                            f"**Single**\n\n"
+                            f"¥{SINGLE_PRICE_JPY:,} / use\n\n"
+                            "1 Full Report"
+                        )
+
+                    with p2:
+                        st.markdown(
+                            f"**Starter**\n\n"
+                            f"¥{STARTER_PRICE_JPY:,} / month\n\n"
+                            f"{STARTER_MONTHLY_USES} uses / month"
+                        )
+                        st.caption("Coming soon")
+
+                    with p3:
+                        st.markdown(
+                            f"**Pro**\n\n"
+                            f"¥{PRO_PRICE_JPY:,} / month\n\n"
+                            f"{PRO_MONTHLY_USES} uses / month"
+                        )
+                        st.caption("Coming soon")
 
     except Exception as e:
         st.error(
@@ -540,6 +592,4 @@ st.caption(
     "Your original files are not modified."
 )
 
-st.caption(
-    f"{APP_NAME} {VERSION}"
-)
+st.caption(f"{APP_NAME} v0.6")
