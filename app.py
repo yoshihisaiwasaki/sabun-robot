@@ -617,40 +617,10 @@ if previous and latest:
 
                     if checkout_url:
 
-                        st.markdown(
-
-                            f"""
-
-                            <a href="{checkout_url}" target="_blank"
-
-                               style="
-
-                                   display:block;
-
-                                   width:100%;
-
-                                   text-align:center;
-
-                                   padding:0.75rem 1rem;
-
-                                   border:1px solid rgba(49,51,63,.2);
-
-                                   border-radius:0.5rem;
-
-                                   text-decoration:none;
-
-                                   font-weight:600;
-
-                               ">
-
-                                UNLOCK FULL REPORT ? ?{SINGLE_PRICE_JPY:,}
-
-                            </a>
-
-                            """,
-
-                            unsafe_allow_html=True,
-
+                        st.link_button(
+                            f"UNLOCK FULL REPORT - {chr(165)}{SINGLE_PRICE_JPY:,}",
+                            checkout_url,
+                            use_container_width=True,
                         )
 
 
