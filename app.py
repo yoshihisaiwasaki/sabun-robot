@@ -12,7 +12,7 @@ from openpyxl import load_workbook
 
 
 APP_NAME = "Sabun Robot"
-VERSION = "0.6-commercial"
+VERSION = "0.7-no-reupload"
 
 SINGLE_PRICE_JPY = 500
 STARTER_PRICE_JPY = 1500
@@ -31,6 +31,8 @@ SINGLE_PAYMENT_URL = secret_or_env("SABUN_SINGLE_PAYMENT_URL")
 SINGLE_PAYMENT_LINK_ID = secret_or_env("SABUN_SINGLE_PAYMENT_LINK_ID")
 
 LEGACY_PAYMENT_LINK_ID = "plink_1UNWQpRNKcXA01aXhLdIaJRM"
+
+APP_URL = "https://sabun-robot.streamlit.app/"
 
 
 st.set_page_config(
@@ -275,6 +277,52 @@ def compare(prev_df, cur_df, key):
     return changes, sorted(da | db)
 
 
+def retrieve_checkout_session(session_id):
+    stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
+    return stripe.checkout.Session.retrieve(session_id)
+
+
+def checkout_is_paid(session):
+    return (
+        getattr(session, "payment_status", None) == "paid"
+        and getattr(session, "amount_total", None) == SINGLE_PRICE_JPY
+        and str(getattr(session, "currency", "") or "").lower() == "jpy"
+    )
+
+
+def create_checkout_for_current_comparison():
+    stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
+
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        line_items=[{
+            "price_data": {
+                "currency": "jpy",
+                "unit_amount": SINGLE_PRICE_JPY,
+                "product_data": {"name": "Sabun Robot ? Full Report"},
+            },
+            "quantity": 1,
+        }],
+        success_url=APP_URL + "?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url=APP_URL,
+    )
+
+    st.session_state["checkout_session_id"] = session.id
+    st.session_state["checkout_url"] = session.url
+
+
+def verify_original_tab_payment():
+    session_id = st.session_state.get("checkout_session_id")
+    if not session_id:
+        return False
+
+    try:
+        return checkout_is_paid(retrieve_checkout_session(session_id))
+    except Exception as e:
+        st.error(f"Payment verification error: {e}")
+        return False
+
+
 def verify_payment():
     session_id = st.query_params.get("session_id")
 
@@ -282,8 +330,7 @@ def verify_payment():
         return False
 
     try:
-        stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
-        session = stripe.checkout.Session.retrieve(session_id)
+        session = retrieve_checkout_session(session_id)
 
         payment_status = getattr(session, "payment_status", None)
         amount_total = getattr(session, "amount_total", None)
@@ -297,8 +344,6 @@ def verify_payment():
             payment_status == "paid"
             and amount_total == SINGLE_PRICE_JPY
             and currency == "jpy"
-            and SINGLE_PAYMENT_LINK_ID
-            and payment_link == SINGLE_PAYMENT_LINK_ID
         ):
             return True
 
@@ -318,6 +363,12 @@ def verify_payment():
 
 
 paid = verify_payment()
+
+if paid:
+    st.session_state["payment_verified"] = True
+
+if st.session_state.get("payment_verified"):
+    paid = True
 
 
 st.markdown(
@@ -427,6 +478,9 @@ if previous and latest:
 
             st.session_state["changes"] = changes
             st.session_state["dups"] = dups
+            st.session_state["payment_verified"] = False
+            st.session_state.pop("checkout_session_id", None)
+            st.session_state.pop("checkout_url", None)
 
         if "changes" in st.session_state:
 
@@ -592,4 +646,4 @@ st.caption(
     "Your original files are not modified."
 )
 
-st.caption(f"{APP_NAME} v0.6")
+st.caption(f"{APP_NAME} v0.7")
