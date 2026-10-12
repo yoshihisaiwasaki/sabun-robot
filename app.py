@@ -437,6 +437,8 @@ def restore_paid_comparison():
             return False
 
         metadata = getattr(session, "metadata", {}) or {}
+        if hasattr(metadata, "to_dict"):
+            metadata = metadata.to_dict()
         comparison_id = metadata.get("comparison_id")
 
         if not comparison_id:
