@@ -1,4 +1,8 @@
 import io
+import uuid
+import time
+import sqlite3
+import json
 import os
 import re
 import unicodedata
@@ -12,7 +16,7 @@ from openpyxl import load_workbook
 
 
 APP_NAME = "Sabun Robot"
-VERSION = "0.7-no-reupload"
+VERSION = "0.8-auto-return"
 
 SINGLE_PRICE_JPY = 500
 STARTER_PRICE_JPY = 1500
@@ -277,6 +281,83 @@ def compare(prev_df, cur_df, key):
     return changes, sorted(da | db)
 
 
+TEMP_DB = "/tmp/sabun_robot_checkout.db"
+TEMP_TTL_SECONDS = 1800
+
+
+def init_temp_store():
+    with sqlite3.connect(TEMP_DB) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS comparisons (
+                comparison_id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+
+
+def cleanup_temp_store():
+    cutoff = time.time() - TEMP_TTL_SECONDS
+    with sqlite3.connect(TEMP_DB) as conn:
+        conn.execute(
+            "DELETE FROM comparisons WHERE created_at < ?",
+            (cutoff,),
+        )
+
+
+def save_comparison_temporarily(changes, dups):
+    init_temp_store()
+    cleanup_temp_store()
+
+    comparison_id = uuid.uuid4().hex
+    payload = json.dumps(
+        {"changes": changes, "dups": dups},
+        ensure_ascii=False,
+    )
+
+    with sqlite3.connect(TEMP_DB) as conn:
+        conn.execute(
+            """
+            INSERT INTO comparisons
+            (comparison_id, payload, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (comparison_id, payload, time.time()),
+        )
+
+    return comparison_id
+
+
+def load_comparison_temporarily(comparison_id):
+    init_temp_store()
+    cleanup_temp_store()
+
+    with sqlite3.connect(TEMP_DB) as conn:
+        row = conn.execute(
+            """
+            SELECT payload
+            FROM comparisons
+            WHERE comparison_id = ?
+            """,
+            (comparison_id,),
+        ).fetchone()
+
+    if not row:
+        return None
+
+    return json.loads(row[0])
+
+
+def delete_temporary_comparison(comparison_id):
+    with sqlite3.connect(TEMP_DB) as conn:
+        conn.execute(
+            "DELETE FROM comparisons WHERE comparison_id = ?",
+            (comparison_id,),
+        )
+
+
 def retrieve_checkout_session(session_id):
     stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
     return stripe.checkout.Session.retrieve(session_id)
@@ -293,17 +374,37 @@ def checkout_is_paid(session):
 def create_checkout_for_current_comparison():
     stripe.api_key = st.secrets["STRIPE_SECRET_KEY"]
 
+    changes = st.session_state.get("changes", [])
+    dups = st.session_state.get("dups", [])
+
+    comparison_id = st.session_state.get("comparison_id")
+
+    if not comparison_id:
+        comparison_id = save_comparison_temporarily(
+            changes,
+            dups,
+        )
+        st.session_state["comparison_id"] = comparison_id
+
     session = stripe.checkout.Session.create(
         mode="payment",
         line_items=[{
             "price_data": {
                 "currency": "jpy",
                 "unit_amount": SINGLE_PRICE_JPY,
-                "product_data": {"name": "Sabun Robot ? Full Report"},
+                "product_data": {
+                    "name": "Sabun Robot - Full Report"
+                },
             },
             "quantity": 1,
         }],
-        success_url=APP_URL + "?session_id={CHECKOUT_SESSION_ID}",
+        metadata={
+            "comparison_id": comparison_id
+        },
+        success_url=(
+            APP_URL
+            + "?session_id={CHECKOUT_SESSION_ID}"
+        ),
         cancel_url=APP_URL,
     )
 
@@ -320,6 +421,54 @@ def verify_original_tab_payment():
         return checkout_is_paid(retrieve_checkout_session(session_id))
     except Exception as e:
         st.error(f"Payment verification error: {e}")
+        return False
+
+
+def restore_paid_comparison():
+    session_id = st.query_params.get("session_id")
+
+    if not session_id:
+        return False
+
+    try:
+        session = retrieve_checkout_session(session_id)
+
+        if not checkout_is_paid(session):
+            return False
+
+        metadata = getattr(session, "metadata", {}) or {}
+        comparison_id = metadata.get("comparison_id")
+
+        if not comparison_id:
+            return False
+
+        saved = load_comparison_temporarily(comparison_id)
+
+        if not saved:
+            st.error(
+                "Payment was verified, but the temporary "
+                "report could not be restored."
+            )
+            return False
+
+        st.session_state["changes"] = saved.get(
+            "changes",
+            [],
+        )
+        st.session_state["dups"] = saved.get(
+            "dups",
+            [],
+        )
+        st.session_state["payment_verified"] = True
+
+        delete_temporary_comparison(comparison_id)
+
+        return True
+
+    except Exception as e:
+        st.error(
+            f"Payment verification error: {e}"
+        )
         return False
 
 
@@ -362,13 +511,20 @@ def verify_payment():
         return False
 
 
-paid = verify_payment()
+restored_after_payment = restore_paid_comparison()
 
-if paid:
-    st.session_state["payment_verified"] = True
-
-if st.session_state.get("payment_verified"):
+if restored_after_payment:
     paid = True
+else:
+    paid = st.session_state.get(
+        "payment_verified",
+        False,
+    )
+
+if restored_after_payment:
+    st.success(
+        "Payment complete. Your Full Report is ready."
+    )
 
 
 st.markdown(
@@ -625,35 +781,9 @@ if previous and latest:
 
 
                         st.caption(
-
-                            "Payment opens in a new tab. "
-
-                            "Keep this Sabun Robot tab open."
-
+                            "After payment, Stripe will return you automatically "
+                            "to your Full Report."
                         )
-
-
-                        if st.button(
-
-                            "I'VE PAID ? UNLOCK MY REPORT",
-
-                            use_container_width=True,
-
-                        ):
-
-                            if verify_original_tab_payment():
-
-                                st.session_state["payment_verified"] = True
-
-                                st.rerun()
-
-                            else:
-
-                                st.warning(
-
-                                    "Payment has not been confirmed yet."
-
-                                )
 
 
                     st.markdown("#### Plans")
@@ -696,4 +826,4 @@ st.caption(
     "Your original files are not modified."
 )
 
-st.caption(f"{APP_NAME} v0.7")
+st.caption(f"{APP_NAME} v0.8")
