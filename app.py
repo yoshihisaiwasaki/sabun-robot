@@ -595,16 +595,96 @@ if previous and latest:
                         "One payment unlocks the Full Report for this purchase."
                     )
 
-                    if SINGLE_PAYMENT_URL:
-                        st.link_button(
-                            f"UNLOCK FULL REPORT — ¥{SINGLE_PRICE_JPY:,}",
-                            SINGLE_PAYMENT_URL,
+                    if not st.session_state.get("checkout_session_id"):
+
+                        try:
+
+                            create_checkout_for_current_comparison()
+
+                        except Exception as e:
+
+                            st.error(
+
+                                "Could not create the secure checkout: "
+
+                                f"{e}"
+
+                            )
+
+
+                    checkout_url = st.session_state.get("checkout_url")
+
+
+                    if checkout_url:
+
+                        st.markdown(
+
+                            f"""
+
+                            <a href="{checkout_url}" target="_blank"
+
+                               style="
+
+                                   display:block;
+
+                                   width:100%;
+
+                                   text-align:center;
+
+                                   padding:0.75rem 1rem;
+
+                                   border:1px solid rgba(49,51,63,.2);
+
+                                   border-radius:0.5rem;
+
+                                   text-decoration:none;
+
+                                   font-weight:600;
+
+                               ">
+
+                                UNLOCK FULL REPORT ? ?{SINGLE_PRICE_JPY:,}
+
+                            </a>
+
+                            """,
+
+                            unsafe_allow_html=True,
+
+                        )
+
+
+                        st.caption(
+
+                            "Payment opens in a new tab. "
+
+                            "Keep this Sabun Robot tab open."
+
+                        )
+
+
+                        if st.button(
+
+                            "I'VE PAID ? UNLOCK MY REPORT",
+
                             use_container_width=True,
-                        )
-                    else:
-                        st.warning(
-                            "The ¥500 payment link is being configured."
-                        )
+
+                        ):
+
+                            if verify_original_tab_payment():
+
+                                st.session_state["payment_verified"] = True
+
+                                st.rerun()
+
+                            else:
+
+                                st.warning(
+
+                                    "Payment has not been confirmed yet."
+
+                                )
+
 
                     st.markdown("#### Plans")
                     p1, p2, p3 = st.columns(3)
